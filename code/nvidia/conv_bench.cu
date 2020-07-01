@@ -317,6 +317,26 @@ public:
         }
     }
 
+    std::string get_bwd_params_algo_string() {
+        if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_0)
+            return "ALGO_0";
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1)
+            return "ALGO_1";
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT)
+            return "FFT";    
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3)
+            return "ALGO_3";
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED)
+            return "WINOGRAD_NONFUSED";
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING)
+            return "FFT_TILING";
+        else {
+            std::stringstream ss;
+            ss << "Illegal algorithm passed to get_bwd_params_algo_string. Algo: " << bwd_params_algo_ << std::endl;
+            throw std::runtime_error(ss.str());
+        }
+    }
+
     void forward(Tensor<T1> x, Tensor<T1> filter, Tensor<T1> h) {
 
         // Convolution forward.
@@ -421,6 +441,7 @@ std::tuple<int, int, int, std::size_t, std::string> time_cnn(
         auto delta = rand<T1>(cnn.get_output_dims(), curand_gen);
         auto dW = zeros<T1>(std::vector<int>{s, r, c, k});
 
+        fwd_algo_s = cnn.get_bwd_params_algo_string();
         // Warm up backward
         cnn.backward_params(input, delta, dW);
 
@@ -517,7 +538,7 @@ int main(int argc, char **argv) {
     if (PAD_KERNELS && ((precision == "int8" && inference) || (USE_TENSOR_CORES && !inference)))
         std::cout << " pad_kerenels  ";
 
-    std::cout << "   fwd_algo " << std::endl;
+    std::cout << "   fwd_params_algo " << std::endl;
 
     std::cout << std::setfill('-') << std::setw(200) << "-" << std::endl;
     std::cout << std::setfill(' ');
@@ -593,7 +614,7 @@ int main(int argc, char **argv) {
         int fwd_time, bwd_inputs_time, bwd_params_time;
         std::size_t flop;
         std::string fwd_algo_s;
-
+       
         std::stringstream ss;
         ss << "Unsupported precision requested. Precision: " << precision << " Inference: " << inference;
 
