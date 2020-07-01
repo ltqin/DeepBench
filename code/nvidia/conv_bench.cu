@@ -326,10 +326,14 @@ public:
             return "FFT";    
         else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_3)
             return "ALGO_3";
-        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED)
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD)
+            return "WINOGRAD";
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED)
             return "WINOGRAD_NONFUSED";
-        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING)
+        else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING)
             return "FFT_TILING";
+	else if (bwd_params_algo_ == CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT)
+            return "ALGO_COUNT";
         else {
             std::stringstream ss;
             ss << "Illegal algorithm passed to get_bwd_params_algo_string. Algo: " << bwd_params_algo_ << std::endl;
