@@ -340,6 +340,7 @@ public:
             throw std::runtime_error(ss.str());
         }
     }
+    std::size_t get_bwd_params_workspace_size(){return bwd_params_workspace_size_;}
 
     void forward(Tensor<T1> x, Tensor<T1> filter, Tensor<T1> h) {
 
@@ -399,7 +400,7 @@ public:
 };
 
 template <typename T1, typename T2>
-std::tuple<int, int, int, std::size_t, std::string> time_cnn(
+std::tuple<int, int, int, std::size_t, std::string,std::size_t> time_cnn(
          int k, int c, int r, int s,
          int n, int h, int w,
          int pad_h, int pad_w,
@@ -483,7 +484,7 @@ std::tuple<int, int, int, std::size_t, std::string> time_cnn(
         bwd_inputs_time = static_cast<int>(std::chrono::duration<double, std::micro>(end - start).count() / num_repeats);
     }
 
-    return std::tuple<int, int, int, std::size_t, std::string>(fwd_time, bwd_inputs_time, bwd_params_time, cnn.flop_, fwd_algo_s);
+    return std::tuple<int, int, int, std::size_t, std::string,std::size_t>(fwd_time, bwd_inputs_time, bwd_params_time, cnn.flop_, fwd_algo_s, cnn.get_bwd_params_workspace_size());
 
 }
 
@@ -542,7 +543,8 @@ int main(int argc, char **argv) {
     if (PAD_KERNELS && ((precision == "int8" && inference) || (USE_TENSOR_CORES && !inference)))
         std::cout << " pad_kerenels  ";
 
-    std::cout << "   fwd_params_algo " << std::endl;
+    std::cout << "   bwd_params_algo ";
+    std::cout << "   bwd_params_workspace " << std::endl;
 
     std::cout << std::setfill('-') << std::setw(200) << "-" << std::endl;
     std::cout << std::setfill(' ');
@@ -553,6 +555,7 @@ int main(int argc, char **argv) {
     auto test = SyntheticTest{128, 128, 128}.conv_non_1x1_pad;
 #else
     auto test = inception_v4_bs128;
+    //auto test = resnet101_bs128;
 #endif
 
     for (const auto &problem : test) {
@@ -618,25 +621,26 @@ int main(int argc, char **argv) {
         int fwd_time, bwd_inputs_time, bwd_params_time;
         std::size_t flop;
         std::string fwd_algo_s;
+	std::size_t workspace_size;
        
         std::stringstream ss;
         ss << "Unsupported precision requested. Precision: " << precision << " Inference: " << inference;
 
 #if CUDNN_MAJOR >= 6
         if (precision == "float") {
-            std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s) =
+            std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s, workspace_size) =
                 time_cnn<float, float>(k, padded_c, r, s, n, padded_h, padded_w, pad_h, pad_w, hstride, wstride, num_repeats, curand_gen, inference);
         } else if (precision == "half") {
             if (!inference) {
-                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s) =
+                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s, workspace_size) =
                     time_cnn<uint16_t, uint32_t>(padded_k, padded_c, r, s, n, padded_h, padded_w, pad_h, pad_w, hstride, wstride, num_repeats, curand_gen, inference);
             } else {
-                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s) =
+                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s, workspace_size) =
                     time_cnn<uint16_t, uint16_t>(padded_k, padded_c, r, s, n, padded_h, padded_w, pad_h, pad_w, hstride, wstride, num_repeats, curand_gen, inference);
             }
         } else if ((precision == "int8") && inference) {
             if (!skip_kernel) {
-                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s) =
+                std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s, workspace_size) =
                     time_cnn<uint8_t, int>(padded_k, padded_c, r, s, n, padded_h, padded_w, pad_h, pad_w, hstride, wstride, num_repeats, curand_gen, inference);
             }
         } else {
@@ -645,7 +649,7 @@ int main(int argc, char **argv) {
 #else
         if (precision != "float")
             throw std::runtime_error(ss.str());
-        std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s) =
+        std::tie(fwd_time, bwd_inputs_time, bwd_params_time, flop, fwd_algo_s, workspace_size) =
             time_cnn<float, float>(k, c, r, s, n, h, w, pad_h, pad_w, hstride, wstride, num_repeats, curand_gen, inference);
 #endif
 
@@ -661,30 +665,31 @@ int main(int argc, char **argv) {
         std::cout << std::setw(10) << wstride;
         std::cout << std::setw(10) << hstride;
         std::cout << std::setw(10) << precision;
-        std::cout << std::setw(15) << std::setprecision(7);
+        std::cout << std::setw(10) << std::setprecision(7);
 
         if (skip_kernel) {
             std::cout << "Not Supported";
         } else {
-            std::cout << fwd_time << std::setw(15) << (flop / fwd_time) * 1.e-6;
+            std::cout << fwd_time << std::setw(10) << (flop / fwd_time) * 1.e-6;
         }
 
         if (PAD_KERNELS && precision == "int8" && inference) {
-            std::cout << std::setw(15) <<  need_padding;
+            std::cout << std::setw(10) <<  need_padding;
         }
 
         if (!inference) {
-            std::cout << std::setw(24) << std::setprecision(7) << bwd_inputs_time << std::setw(15) << (flop / bwd_inputs_time) * 1.e-6;
-            std::cout << std::setw(24) << std::setprecision(7) << bwd_params_time << std::setw(15) << (flop / bwd_params_time) * 1.e-6;
-            std::cout << std::setw(19) << std::setprecision(8) << fwd_time + bwd_inputs_time + bwd_params_time;
+            std::cout << std::setw(15) << std::setprecision(7) << bwd_inputs_time << std::setw(10) << (flop / bwd_inputs_time) * 1.e-6;
+            std::cout << std::setw(15) << std::setprecision(7) << bwd_params_time << std::setw(10) << (flop / bwd_params_time) * 1.e-6;
+            std::cout << std::setw(15) << std::setprecision(8) << fwd_time + bwd_inputs_time + bwd_params_time;
         }
 
         if (USE_TENSOR_CORES && PAD_KERNELS && !inference) {
-            std::cout << std::setw(15) <<  need_padding;
+            std::cout << std::setw(10) <<  need_padding;
         }
 
 
-        std::cout << std::setw(25) << fwd_algo_s;
+        std::cout << std::setw(20) << fwd_algo_s;
+        std::cout << std::setw(20) << workspace_size;
         std::cout << std::endl;
     }
 
